@@ -17,7 +17,7 @@ function getDistance(A, B) {
  * 二维向量
  */
 class Vec2 {
-    constructor(x, y) {
+    constructor(x = 0, y = 0) {
         this.x = x;
         this.y = y;
         this.info = {}; // 直接把生成信息带到向量里, 就是这么diao
@@ -32,6 +32,9 @@ class Vec2 {
     }
     // 获取垂线 (顺时针)
     getPerp() {
+        if (this.isZero()) {
+            console.warn('零向量取法线, something might be wrong');
+        }
         return new Vec2(-this.y, this.x);
     }
     // 乘积
@@ -98,6 +101,8 @@ class Vec2 {
 }
 
 // 向量三重积
+// @NOTE A x B x A 能方便的计算A在B方向的法线, 但是可能会等于0, 需要做单独判断
+//       如果只是需要一个法线, 而不需要方向的话, A.getPerp() 不会返回0向量
 function vecTripleProduct (a, b, c) {
     // a * b * c = -a(c . b) + b(c . a)
     // console.log('三重积', a, b, c, b.product(c.dot(a)).sub(a.product(c.dot(b))));

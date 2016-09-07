@@ -97,4 +97,12 @@ export class Circle extends Base {
             radius: this.radius,
         }
     }
+
+    getAABB() {
+        // y负, y正, x负, x正 (正常坐标系的下上左右, canvas坐标系的上下左右)
+        return [this.pos.y - this.radius,
+                this.pos.y + this.radius,
+                this.pos.x - this.radius,
+                this.pos.x + this.radius]
+    }
 }

@@ -14,6 +14,12 @@ class Polygon extends Base{
         this.centroid = new Vec2(0, 0);
         this.behavior(1);
         this.I = 1; // 转动惯量, @TODO 计算转动惯量
+
+        // 四个方向上的最远点, 用于生成AABB盒
+        this._btmPoint = {}; // y负方向, canvas朝上
+        this._topPoint = {}; // y正方向, canvas朝下
+        this._lPoint = {};
+        this._rPoint = {};
     }
 
     draw(ct) {
@@ -40,6 +46,10 @@ class Polygon extends Base{
         // 更新顶点
         this.vertexesLocal.map(ver => ver.rotate(this.angularVelocity / samsaraCount, this.centroidLocal));
         this.vertexes = this.vertexesLocal.map(ver => new Vec2(ver.x + this.pos.x, ver.y + this.pos.y));
+        this._btmPoint = this.getFarthest(new Vec2(0, -1));
+        this._topPoint = this.getFarthest(new Vec2(0, 1));
+        this._lPoint = this.getFarthest(new Vec2(-1, 0));
+        this._rPoint = this.getFarthest(new Vec2(1, 0));
     }
 
     getFarthest(directiion) {
@@ -58,6 +68,11 @@ class Polygon extends Base{
         return this.vertexes[index];
     }
 
+    // setMass(m) {
+    //     this.mass = m;
+    //     this.invMass = 1/m;
+    // }
+
     setStatic() {
         this.m = Infinity;
         this.I = Infinity;
@@ -65,6 +80,7 @@ class Polygon extends Base{
         this.a.x = this.a.y = 0;
         this.angularVelocity = 0;
         this.static = true;
+        this.move = ()=>{};
     }
 
     getBounds() {
@@ -72,9 +88,22 @@ class Polygon extends Base{
             type: 'polygon'
         }
     }
+
     destory() {
         this.dead = true;
     }
+
+    getAABB() {
+        // y负, y正, x负, x正 (正常坐标系的下上左右, canvas坐标系的上下左右)
+        // @NOTE: 为什吗四个最远点可以缓存而不可以缓存位置,
+        //        因为最远点只会在旋转发生时变化, 而位置可能在每一次碰撞求解时都被调整
+        return [this.pos.y - this._btmPoint.y,
+                this.pos.y + this._topPoint.y,
+                this.pos.x - this._lPoint.x,
+                this.pos.x + this._rPoint.x]
+    }
+
+
 }
 
 export default Polygon;

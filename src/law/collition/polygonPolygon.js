@@ -72,7 +72,9 @@ function contactRouter(contact) {
 }
 
 // 相对速度大于这个值则视为碰撞, 小于则视为接触, 小于零则视为正在分离
-const COLLITION_THRESHOLD = 1;
+const COLLITION_THRESHOLD = 0.1;
+// 相交深度大于这个值才进行位置调整, 据说可以避免抖动?
+const SLOP_THRESHOLD = 0.01;
 
 // 碰撞反馈,
 // 麻烦的地方是碰撞冲量怎么计算
@@ -89,29 +91,33 @@ function contactHandler(contact, P) {
     const vA1 = A.v;
     const vB1 = B.v;
     let n = contact.normal; // 碰撞(分离)向量(单位向量)(A指向B)
-    // n 到底是指向哪里的??
     let dirAB = B.centroid.sub(A.centroid);
     if (dirAB.dot(n) < 0) {
         console.log(dirAB.dot(n), dirAB, n);
     }
     let depth = contact.depth; // 碰撞深度(最短分离深度)
      // 恢复系数
-    let e = 0.8;
+    let e = 0.7;
     // 质量
     const mA = contact.shapeA.m;
     const mB = contact.shapeB.m;
+    // const inv_mA = contact.shapeA.invMass;
+    // const inv_mB = contact.shapeB.invMass;
     // r
     const rAP = P.sub(A.centroid);
     const rBP = P.sub(B.centroid);
     // 两个物体在碰撞点处的速度: vP = vO + ω*rOP⊥
-    const vAP = vA1.add(rAP.getPerp().mult(A.angularVelocity)); // 获取的垂线和角速度正方向都是顺时针的(因为y轴向下)
-    const vBP = vB1.add(rBP.getPerp().mult(B.angularVelocity)); // 获取的垂线和角速度正方向都是顺时针的(因为y轴向下)
-    const vAB = vAP.sub(vBP);
+    // @TODO 这里可以直接用标量与向量的cross product v=ω×rv=ω×r
+    //       http://gamedevelopment.tutsplus.com/tutorials/how-to-create-a-custom-2d-physics-engine-oriented-rigid-bodies--gamedev-8032
+    const vAP = vA1.add(rAP.getPerp().mult(A.angularVelocity)); // 获取的垂线和角速度正方向都是顺时针的(因为y轴向下), 可能是0
+    const vBP = vB1.add(rBP.getPerp().mult(B.angularVelocity)); // 获取的垂线和角速度正方向都是顺时针的(因为y轴向下), 可能是0
+    const vAB = vAP.sub(vBP); // 相对速度, A上的P点相对于 B上的P点的速度, 可能是0
 
     const vABPerp = vAB.dot(n);
-    // 如果纵向相对速度很小, 则视为纵向相对静止, 通过减小恢复系数来避免震动
+    // // 如果纵向相对速度很小, 则视为纵向相对静止, 通过减小恢复系数来减小抖动
+    // // @NOTE seems not useful...
     if (vABPerp <= COLLITION_THRESHOLD) {
-        e = 0.3;
+        e = 0.5;
     }
     // 碰撞发生
     if (vABPerp >= 0) {
@@ -120,47 +126,114 @@ function contactHandler(contact, P) {
         // 分母
         const jDOWN = (n.dot(n) * (1/mA + 1/mB)) + Math.pow(rAP.perpDot(n), 2)/A.I + Math.pow(rBP.perpDot(n), 2)/B.I;
         // 冲量系数
-        const j = jUP/jDOWN;
+        let j = jUP/jDOWN; // j 是负的
+        // @NOTE 意外收获: 把相交深度计入碰撞冲量中, 能比较明显地减小相交, 而不会对稳定性造成较大影响
+        j -= depth/2;
+        // 中和掉位置保护造成的势能升高
+        // if (vABPerp <= COLLITION_THRESHOLD) {
+        //     j *= 1/2;
+        // }
+        // stability 测试
+        // if (Math.abs(j) < 0.1) {
+        //     j = j/2;
+        // }
         // 冲量
         const pA = n.mult(j);
         const pB = n.mult(j).getOpp();
+
+
+        // // Friction
+        // // 合成静摩擦系数
+        // let composedStaticFrictionCoe = composeFriction(A.staticFriction, B.staticFriction);
+        // // 最大静摩擦力大小(碰撞力是不可求的, 这里使用的是摩擦力造成的冲量的大小 F*dt)
+        // let fStatic = Math.abs(j * composedStaticFrictionCoe);
+        //
+        // let pfA, pfB;
+        // if (vAB.isZero() || vAB.getPerp().dot(n) === 0) {
+        //     console.log('zero');
+        //     pfA = pfB = new Vec2(0, 0);
+        // }
+        // else {
+        //     // 摩擦力方向
+        //     let t = vecTripleProduct(n, vAB.getOpp(), n).unit();
+        //     // 分子
+        //     let fjUP = -(1+e) * vAB.dot(t);
+        //     // 分母
+        //     let fjDOWN = (t.dot(t) * (1/mA + 1/mB)) + Math.pow(rAP.perpDot(t), 2)/A.I + Math.pow(rBP.perpDot(t), 2)/B.I;
+        //     // 冲量系数
+        //     let fj = fjUP/fjDOWN;
+        //     // let aaa = fj + 0;
+        //     if (Math.abs(fj) > fStatic) {
+        //         fj = fStatic;
+        //         // console.log('AAA, ', fj);
+        //     }
+        //     else {
+        //         // console.log('BBB, ', fj);
+        //         // fj += 0.2;
+        //     }
+        //     // console.log('vAB ', vAB);
+        //     // console.log('t ', t);
+        //     // console.log('fjUP ', fjUP);
+        //     // console.log('fjDOWN ', fjDOWN);
+        //     // console.log('fj ', aaa);
+        //     // console.log('fStatic ', fStatic);
+        //     // console.log('n ', n);
+        //     // console.log('jUP ', jUP);
+        //     // console.log('jDOWN ', jDOWN);
+        //     // console.log('j ', j);
+        //     // console.log('-----------------------');
+        //     // 冲量
+        //     pfA = t.mult(fj);
+        //     pfB = t.mult(fj).getOpp();
+        // }
+        // let tangentB = vecTripleProduct(n, vAB, n).unit();
+        // let tangentA = tangentFrictionB.getOpp();
+
         // 改变速度和角速度
+        // const vA2 = vA1.add(pA.add(pfA).mult(1/mA));
+        // const vB2 = vB1.add(pB.add(pfB).mult(1/mB));
+        // A.v = vA2;        // A.x += sepA.x;
+        // B.v = vB2;
+        // let deltaOmigaA = rAP.perpDot(pA.add(pfA)) / A.I;
+        // let deltaOmigaB = rBP.perpDot(pB.add(pfB)) / B.I;
+        // A.angularVelocity += deltaOmigaA;
+        // B.angularVelocity += deltaOmigaB;
         const vA2 = vA1.add(pA.mult(1/mA));
         const vB2 = vB1.add(pB.mult(1/mB));
-        A.v = vA2;        // A.x += sepA.x;
-        // A.y += sepA.y;
-        // B.x += sepB.x;
-        // B.y += sepB.y;
+        A.v = vA2;
         B.v = vB2;
+        // A.__v.push(vA2);
+        // B.__v.push(vB2);
+        // A.__impulse.push(pA);
+        // B.__impulse.push(pB);
         let deltaOmigaA = rAP.perpDot(pA) / A.I;
         let deltaOmigaB = rBP.perpDot(pB) / B.I;
         A.angularVelocity += deltaOmigaA;
         B.angularVelocity += deltaOmigaB;
 
-        // @NOTE 这样的话多个物体同时碰撞, 中间的物体必然会行为怪异
-        // 立刻把这两个分开
-        const sep = n.mult(depth / 2);
-        let sepA = sep.mult(mB / (mA + mB)).getOpp();
-        let sepB = sep.mult(mA / (mA + mB));
-        // 这里, 质量无限大的情况需要单独处理
-        if (mA === Infinity) {
-            sepA = new Vec2(0, 0);
-            sepB = sep;
-        }
-        if (mB === Infinity) {
-            sepA = sep.getOpp();
-            sepB = new Vec2(0, 0);
-        }
-        A.pos = A.pos.add(sepA);
-        B.pos = B.pos.add(sepB);
+        // 抗抖动测试:
+        // #1 防止重力的干扰
+        // @NOTE 理论基础: 碰撞力远大于其它力, 发生碰撞时可以不再考虑其它作用力
+        //       效果显著? => 似乎失败了
+        // A.a.set(0, 0);
+        // B.a.set(0, 0);
+        //
+
+        // console.log('#253', j);
+        // #3 模拟一个冲量来进行推开操作
     }
     // else if (vABPerp <= COLLITION_THRESHOLD) {
     //
     // }
     // 正在分离
     else {
-        // 立刻把这两个分开
-        const sep = n.mult(depth / 2);
+    }
+    // @NOTE 这样的话多个物体同时碰撞, 中间的物体必然会行为怪异
+    // 立刻把这两个分开
+    // @TEST 使用渗透阈值测试抗抖动
+    //       似乎并没有什么用
+    // if (depth > SLOP_THRESHOLD) {
+        const sep = n.mult(depth); // 加一个百分比来减小抖动
         let sepA = sep.mult(mB / (mA + mB)).getOpp();
         let sepB = sep.mult(mA / (mA + mB));
         // 这里, 质量无限大的情况需要单独处理
@@ -172,11 +245,67 @@ function contactHandler(contact, P) {
             sepA = sep.getOpp();
             sepB = new Vec2(0, 0);
         }
-        A.pos = A.pos.add(sepA);
-        B.pos = B.pos.add(sepB);
-    }
+        // A.pos = A.pos.add(sepA);
+        // B.pos = B.pos.add(sepB);
+        // #2 插值抗抖动
+        // @NOTE 记录一轮中所有的位置校准建议, 最后把这些建议综合起来执行
+        //       似乎失败了
+        //       似乎生效了...... damn it
+        // if (sepA.y > 0) {
+        //     sepA.y = 0
+        // }
+        // if (sepB.y > 0) {
+        //     sepB.y = 0
+        // }
+        A.__posProtection.push(sepA);
+        B.__posProtection.push(sepB);
+
+        // let j = -depth * 10;
+        // if (j < -10) {
+        //     j = -10;
+        // }
+
+        // let j = -4;
+        //
+        // const pA = n.mult(j);
+        // const pB = n.mult(j).getOpp();
+        //
+        // const vA2 = vA1.add(pA.mult(1/mA));
+        // const vB2 = vB1.add(pB.mult(1/mB));
+        // A.a = A.a.add(pA.mult(1/mA));
+        // B.a = B.a.add(pB.mult(1/mB));
+        //
+        // let deltaOmigaA = rAP.perpDot(pA) / A.I;
+        // let deltaOmigaB = rBP.perpDot(pB) / B.I;
+        // A.angularVelocity += deltaOmigaA;
+        // B.angularVelocity += deltaOmigaB;
+    // }
+
+    // 位置校准的困境: 直接推来推去不能用来校准多面夹击的情况,
+    //                 而碰撞反馈的速度又和碰前相对速度有关
+    //                 如果碰前基本相对静止, 加上误差之后就基本上没有反馈速度了
+    //                 因此额外加上一个分离速度, 只和相交深度?以及质量?有关
+    // 用于位置校准的反馈加速度
+    // @RESULT 似乎失败了
+    // let posAceA = n.getOpp().mult(B.m / (A.m + B.m));
+    // let posAceB = n.mult(A.m / (A.m + B.m));
+    // if (A.m === Infinity) {
+    //     posAceA = new Vec2(0, 0);
+    //     posAceB = n;
+    // }
+    // if (B.m === Infinity) {
+    //     posAceB = new Vec2(0, 0);
+    //     posAceA = n.getOpp();
+    // }
+    // posAceA = posAceA.mult(1/5);
+    // posAceB = posAceB.mult(1/5);
+    // A.a = A.a.add(posAceA);
+    // B.a = B.a.add(posAceB);
 }
 
+function composeFriction(fA, fB) {
+    return Math.sqrt(Math.pow(fA, 2), Math.pow(fB, 2));
+}
 
 function useElasticCollision(A, B) {
     let contact = GJK.bind(this)(A, B);

@@ -113,7 +113,7 @@ class Engine {
             let entities = this.entities;
             // 1. 运行物理定律
             // 1.1 a=F/m, F是瞬时的, 如果物理定律中没有其他影响, a应该立即置0
-            entities.map(entity => entity.ax = entity.ay = 0);
+            entities.map(entity => entity.a.set(0, 0));
             // 1.2 执行所有注册了的物理定律/游戏规则
             this.laws.map(law => {
                 law();
